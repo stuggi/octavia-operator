@@ -147,11 +147,10 @@ spec:
                 description: PersistenceDatabaseAccount - name of MariaDBAccount which
                   will be used to connect for the persistence database
                 type: string
-              redisHostIPs:
-                description: List of Redis Host IP addresses
-                items:
-                  type: string
-                type: array
+              redisInstance:
+                default: redis
+                description: Redis instance name.
+                type: string
               resources:
                 description: Resources - Compute Resources required by this service
                   (Limits/Requests). https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
@@ -236,6 +235,7 @@ spec:
                 type: string
             required:
             - databaseInstance
+            - redisInstance
             - role
             - secret
             - serviceAccount

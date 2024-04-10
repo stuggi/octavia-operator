@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	redisv1 "github.com/openstack-k8s-operators/infra-operator/apis/redis/v1beta1"
 	"github.com/openstack-k8s-operators/lib-common/modules/common"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/condition"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/daemonset"
@@ -159,6 +160,7 @@ func (r *OctaviaAmphoraControllerReconciler) Reconcile(ctx context.Context, req 
 		condition.UnknownCondition(condition.DeploymentReadyCondition, condition.InitReason, condition.DeploymentReadyInitMessage),
 		condition.UnknownCondition(condition.NetworkAttachmentsReadyCondition, condition.InitReason, condition.NetworkAttachmentsReadyInitMessage),
 		condition.UnknownCondition(condition.TLSInputReadyCondition, condition.InitReason, condition.InputReadyInitMessage),
+		condition.UnknownCondition(condition.RedisReadyCondition, condition.InitReason, condition.RedisReadyInitMessage),
 	)
 
 	instance.Status.Conditions.Init(&cl)
@@ -218,6 +220,21 @@ func (r *OctaviaAmphoraControllerReconciler) reconcileDelete(ctx context.Context
 	helper *helper.Helper) (ctrl.Result, error) {
 	Log := r.GetLogger(ctx)
 	Log.Info("Reconciling Service delete")
+
+	// Remove our finalizer from redis
+	redis, err := redisv1.GetRedisByName(ctx, helper, instance.Spec.RedisInstance, instance.Namespace)
+	if err != nil && !k8s_errors.IsNotFound(err) {
+		return ctrl.Result{}, err
+	}
+
+	if !k8s_errors.IsNotFound(err) && redis != nil {
+		if controllerutil.RemoveFinalizer(redis, helper.GetFinalizer()) {
+			err := r.Update(ctx, redis)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
 
 	controllerutil.RemoveFinalizer(instance, helper.GetFinalizer())
 
@@ -304,6 +321,56 @@ func (r *OctaviaAmphoraControllerReconciler) reconcileNormal(ctx context.Context
 		common.AppSelector: instance.ObjectMeta.Name,
 	}
 
+	//
+	// Check for required redis
+	//
+	redis, err := redisv1.GetRedisByName(ctx, helper, instance.Spec.RedisInstance, instance.Namespace)
+	if err != nil {
+		if k8s_errors.IsNotFound(err) {
+			instance.Status.Conditions.Set(condition.FalseCondition(
+				condition.RedisReadyCondition,
+				condition.RequestedReason,
+				condition.SeverityInfo,
+				condition.RedisReadyWaitingMessage))
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, fmt.Errorf("redis %s not found", instance.Spec.RedisInstance)
+		}
+		instance.Status.Conditions.Set(condition.FalseCondition(
+			condition.RedisReadyCondition,
+			condition.ErrorReason,
+			condition.SeverityWarning,
+			condition.RedisReadyErrorMessage,
+			err.Error()))
+		return ctrl.Result{}, err
+	}
+
+	// Add finalizer to redis to prevent it from being deleted now that we're using it
+	if controllerutil.AddFinalizer(redis, helper.GetFinalizer()) {
+		err := r.Update(ctx, redis)
+		if err != nil {
+			instance.Status.Conditions.Set(condition.FalseCondition(
+				condition.RedisReadyCondition,
+				condition.ErrorReason,
+				condition.SeverityWarning,
+				condition.RedisReadyErrorMessage,
+				err.Error()))
+			return ctrl.Result{}, err
+		}
+	}
+
+	if !redis.IsReady() {
+		instance.Status.Conditions.Set(condition.FalseCondition(
+			condition.RedisReadyCondition,
+			condition.RequestedReason,
+			condition.SeverityInfo,
+			condition.RedisReadyWaitingMessage))
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, fmt.Errorf("redis %s is not ready", redis.Name)
+	}
+
+	// Mark the Redis Service as Ready if we get to this point with no errors
+	instance.Status.Conditions.MarkTrue(
+		condition.RedisReadyCondition, condition.MemcachedReadyMessage)
+	// run check redis - end
+
 	// Handle config map
 	configMapVars := make(map[string]env.Setter)
 
@@ -359,7 +426,7 @@ func (r *OctaviaAmphoraControllerReconciler) reconcileNormal(ctx context.Context
 		LbSecurityGroupID:      instance.Spec.LbSecurityGroupID,
 	}
 
-	err = r.generateServiceConfigMaps(ctx, instance, helper, &configMapVars, templateVars, ospSecret)
+	err = r.generateServiceConfigMaps(ctx, instance, helper, &configMapVars, templateVars, ospSecret, redis)
 	if err != nil {
 		instance.Status.Conditions.Set(condition.FalseCondition(
 			condition.ServiceConfigReadyCondition,
@@ -516,6 +583,7 @@ func (r *OctaviaAmphoraControllerReconciler) generateServiceConfigMaps(
 	envVars *map[string]env.Setter,
 	templateVars OctaviaTemplateVars,
 	ospSecret *corev1.Secret,
+	redis *redisv1.Redis,
 ) error {
 	r.Log.Info(fmt.Sprintf("generating service config map for %s (%s)", instance.Name, instance.Kind))
 	cmLabels := labels.GetLabels(instance, labels.GetGroupLabel(instance.ObjectMeta.Name), map[string]string{})
@@ -678,7 +746,8 @@ func (r *OctaviaAmphoraControllerReconciler) generateServiceConfigMaps(
 	}
 	// TODO(gthiemonge) store keys/passwords/passphrases in a specific config file stored in a secret
 	templateParameters["HeartbeatKey"] = string(ospSecret.Data["OctaviaHeartbeatKey"])
-	templateParameters["JobboardBackendHosts"] = strings.Join(spec.RedisHostIPs[:], ",")
+	templateParameters["JobboardBackendHosts"] = redis.GetRedisServerListString()
+	templateParameters["RedisTLS"] = redis.GetRedisTLSSupport()
 
 	// TODO(beagles): populate the template parameters
 	cms := []util.Template{
