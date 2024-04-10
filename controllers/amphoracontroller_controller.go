@@ -368,7 +368,7 @@ func (r *OctaviaAmphoraControllerReconciler) reconcileNormal(ctx context.Context
 
 	// Mark the Redis Service as Ready if we get to this point with no errors
 	instance.Status.Conditions.MarkTrue(
-		condition.RedisReadyCondition, condition.MemcachedReadyMessage)
+		condition.RedisReadyCondition, condition.RedisReadyMessage)
 	// run check redis - end
 
 	// Handle config map
@@ -747,6 +747,7 @@ func (r *OctaviaAmphoraControllerReconciler) generateServiceConfigMaps(
 	// TODO(gthiemonge) store keys/passwords/passphrases in a specific config file stored in a secret
 	templateParameters["HeartbeatKey"] = string(ospSecret.Data["OctaviaHeartbeatKey"])
 	templateParameters["JobboardBackendHosts"] = redis.GetRedisServerListString()
+	templateParameters["RedisPort"] = redis.GetRedisPortString()
 	templateParameters["RedisTLS"] = redis.GetRedisTLSSupport()
 
 	// TODO(beagles): populate the template parameters

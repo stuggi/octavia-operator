@@ -10,7 +10,7 @@ require (
 	github.com/onsi/gomega v1.32.0
 	github.com/openstack-k8s-operators/infra-operator/apis v0.3.1-0.20240221083751-49edc0df8a12
 	github.com/openstack-k8s-operators/keystone-operator/api v0.3.1-0.20240220135139-2dc967b0f6de
-	github.com/openstack-k8s-operators/lib-common/modules/common v0.3.1-0.20240402131709-f2ff3c9b230b
+	github.com/openstack-k8s-operators/lib-common/modules/common v0.3.1-0.20240411114225-8e997e0e448a
 	github.com/openstack-k8s-operators/lib-common/modules/openstack v0.3.1-0.20240224182407-3b6c02b195f6
 	github.com/openstack-k8s-operators/mariadb-operator/api v0.3.1-0.20240313124955-f152bee56715
 	github.com/openstack-k8s-operators/octavia-operator/api v0.0.0-00010101000000-000000000000
@@ -91,6 +91,4 @@ replace github.com/openstack-k8s-operators/octavia-operator/api => ./api
 // must consistent within modules and service operators
 replace github.com/openshift/api => github.com/openshift/api v0.0.0-20230414143018-3367bc7e6ac7 //allow-merging
 
-replace github.com/openstack-k8s-operators/infra-operator/apis => github.com/stuggi/infra-operator/apis v0.0.0-20240410143430-72f4a4060cc6
-
-replace github.com/openstack-k8s-operators/lib-common/modules/common => github.com/stuggi/lib-common/modules/common v0.0.0-20240410091541-d22e3276c3a1
+replace github.com/openstack-k8s-operators/infra-operator/apis => github.com/stuggi/infra-operator/apis v0.0.0-20240411103156-322830be3bcd
