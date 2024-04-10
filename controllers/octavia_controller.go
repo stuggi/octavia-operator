@@ -501,6 +501,7 @@ func (r *OctaviaReconciler) reconcileNormal(ctx context.Context, instance *octav
 			condition.InputReadyWaitingMessage))
 		return ctrl.Result{RequeueAfter: time.Duration(10) * time.Second}, nil
 	}
+	instance.Status.Conditions.MarkTrue(condition.RabbitMqTransportURLReadyCondition, condition.RabbitMqTransportURLReadyMessage)
 
 	err = octavia.EnsureAmphoraCerts(ctx, instance, helper, &Log)
 	if err != nil {
@@ -934,6 +935,7 @@ func (r *OctaviaReconciler) reconcileAmphoraImages(
 		Log.Info("Image Upload Pod not ready")
 		return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Second}, nil
 	}
+	instance.Status.Conditions.MarkTrue(condition.DeploymentReadyCondition, condition.DeploymentReadyMessage)
 
 	exportLabels := util.MergeStringMaps(
 		serviceLabels,
@@ -999,6 +1001,7 @@ func (r *OctaviaReconciler) reconcileAmphoraImages(
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	instance.Status.Conditions.MarkTrue(condition.ExposeServiceReadyCondition, condition.ExposeServiceReadyMessage)
 
 	urlMap, err := r.getLocalImageURLs(ctx, helper, endpoint)
 	if err != nil {
