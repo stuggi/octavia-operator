@@ -20,6 +20,9 @@ import (
 
 	octaviav1 "github.com/openstack-k8s-operators/octavia-operator/api/v1beta1"
 
+	"github.com/openstack-k8s-operators/lib-common/modules/common/pod"
+	"github.com/openstack-k8s-operators/lib-common/modules/serviceuser"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,6 +114,7 @@ func ImageUploadDeployment(
 				Spec: corev1.PodSpec{
 					ServiceAccountName:           instance.RbacResourceName(),
 					AutomountServiceAccountToken: ptr.To(false),
+					SecurityContext:              pod.RestrictivePodSecurityContext(serviceuser.OctaviaUID),
 					Containers: []corev1.Container{
 						{
 							Name: "octavia-amphora-httpd",
@@ -120,6 +124,7 @@ func ImageUploadDeployment(
 							Args:            args,
 							Image:           instance.Spec.ApacheContainerImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
+							SecurityContext: pod.RestrictiveSecurityContext(serviceuser.OctaviaUID),
 							VolumeMounts:    getVolumeMounts(),
 							Resources:       instance.Spec.Resources,
 							// TODO(gthiemonge) do we need probes?
@@ -145,6 +150,12 @@ func ImageUploadDeployment(
 }
 
 func initContainer(init ImageUploadDetails) []corev1.Container {
+	// Kept on root: this container's actual copy logic lives in
+	// AmphoraImageContainerImage's own default entrypoint (not this repo's
+	// code), and there's no visibility into whether it can read its bundled
+	// amphora image as a non-root UID. Unlike the main container's own
+	// cp/run-httpd command below, this isn't something we can verify safe to
+	// change without a real cluster.
 	runAsUser := int64(0)
 	envs := []corev1.EnvVar{
 		{

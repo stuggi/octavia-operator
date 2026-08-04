@@ -16,6 +16,9 @@ limitations under the License.
 package octavia
 
 import (
+	"fmt"
+	"slices"
+
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -73,8 +76,11 @@ func GetInitVolumeMounts() []corev1.VolumeMount {
 	}
 }
 
-// GetVolumeMounts - general VolumeMounts
-func GetVolumeMounts(serviceName string) []corev1.VolumeMount {
+// GetVolumeMounts - general VolumeMounts. Sources the final-path mounts from
+// the same "config-data-merged" EmptyDir the init container writes into --
+// the crudini merge itself is unchanged, only kolla's staging-to-final copy
+// step is replaced with these SubPath mounts.
+func GetVolumeMounts() []corev1.VolumeMount {
 	return []corev1.VolumeMount{
 		{
 			Name:      "scripts",
@@ -83,14 +89,41 @@ func GetVolumeMounts(serviceName string) []corev1.VolumeMount {
 		},
 		{
 			Name:      "config-data-merged",
-			MountPath: "/var/lib/config-data/merged",
-			ReadOnly:  false,
+			MountPath: "/etc/octavia/octavia.conf",
+			SubPath:   "octavia.conf",
+			ReadOnly:  true,
 		},
 		{
 			Name:      "config-data-merged",
-			MountPath: "/var/lib/kolla/config_files/config.json",
-			SubPath:   serviceName + "-config.json",
+			MountPath: "/etc/octavia/octavia.conf.d/custom.conf",
+			SubPath:   "custom.conf",
+			ReadOnly:  true,
+		},
+		{
+			Name:      "config-data-merged",
+			MountPath: "/etc/my.cnf",
+			SubPath:   "my.cnf",
 			ReadOnly:  true,
 		},
 	}
+}
+
+// GetConfigOverwriteVolumeMounts returns SubPath mounts that place each
+// DefaultConfigOverwrite key as an individual file under basePath, sourced
+// from the "config-data-merged" EmptyDir. Mirrors kolla's optional
+// policy.yaml-style overwrite copy without assuming the key always exists.
+func GetConfigOverwriteVolumeMounts(overwriteKeys []string, basePath string) []corev1.VolumeMount {
+	mounts := make([]corev1.VolumeMount, 0, len(overwriteKeys))
+	sorted := make([]string, len(overwriteKeys))
+	copy(sorted, overwriteKeys)
+	slices.Sort(sorted)
+	for _, key := range sorted {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "config-data-merged",
+			MountPath: fmt.Sprintf("%s/%s", basePath, key),
+			SubPath:   key,
+			ReadOnly:  true,
+		})
+	}
+	return mounts
 }

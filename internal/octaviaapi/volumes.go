@@ -36,7 +36,7 @@ func getVolumes(name string) []corev1.Volume {
 }
 
 // getVolumeMounts - general VolumeMounts
-func getVolumeMounts(serviceName string) []corev1.VolumeMount {
+func getVolumeMounts() []corev1.VolumeMount {
 
 	// The API pod has an extra volume so the API and the provider agent can
 	// communicate with each other.
@@ -47,5 +47,5 @@ func getVolumeMounts(serviceName string) []corev1.VolumeMount {
 			ReadOnly:  false,
 		},
 	}
-	return append(octavia.GetVolumeMounts(serviceName), volumeMounts...)
+	return append(octavia.GetVolumeMounts(), volumeMounts...)
 }

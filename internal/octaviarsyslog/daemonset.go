@@ -23,6 +23,8 @@ import (
 	"github.com/openstack-k8s-operators/lib-common/modules/common"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/affinity"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/env"
+	"github.com/openstack-k8s-operators/lib-common/modules/common/pod"
+	"github.com/openstack-k8s-operators/lib-common/modules/serviceuser"
 	octaviav1 "github.com/openstack-k8s-operators/octavia-operator/api/v1beta1"
 	"github.com/openstack-k8s-operators/octavia-operator/internal/octavia"
 
@@ -52,7 +54,26 @@ func DaemonSet(
 	// communicate with each other.
 	volumes := GetVolumes(instance.Name)
 
-	volumeMounts := octavia.GetVolumeMounts(serviceName)
+	volumeMounts := octavia.GetVolumeMounts()
+	overwriteKeys := make([]string, 0, len(instance.Spec.DefaultConfigOverwrite))
+	for key := range instance.Spec.DefaultConfigOverwrite {
+		overwriteKeys = append(overwriteKeys, key)
+	}
+	volumeMounts = append(volumeMounts, octavia.GetConfigOverwriteVolumeMounts(overwriteKeys, "/etc/octavia")...)
+	volumeMounts = append(volumeMounts,
+		corev1.VolumeMount{
+			Name:      "config-data-merged",
+			MountPath: "/etc/rsyslog.d/10-octavia.conf",
+			SubPath:   "10-octavia.conf",
+			ReadOnly:  true,
+		},
+		corev1.VolumeMount{
+			Name:      "config-data-merged",
+			MountPath: "/etc/rsyslog.d/09-octavia-listener.conf",
+			SubPath:   "09-octavia-listener.conf",
+			ReadOnly:  true,
+		},
+	)
 
 	livenessProbe := &corev1.Probe{
 		// TODO might need tuning
@@ -90,7 +111,6 @@ func DaemonSet(
 
 	envVars := map[string]env.Setter{}
 
-	envVars["KOLLA_CONFIG_STRATEGY"] = env.SetValue("COPY_ALWAYS")
 	envVars["CONFIG_HASH"] = env.SetValue(configHash)
 	envVars["NODE_NAME"] = env.DownwardAPI("spec.nodeName")
 
@@ -126,15 +146,21 @@ func DaemonSet(
 				Spec: corev1.PodSpec{
 					ServiceAccountName:           instance.Spec.ServiceAccount,
 					AutomountServiceAccountToken: ptr.To(false),
+					SecurityContext:              pod.RestrictivePodSecurityContext(serviceuser.OctaviaUID),
 					Containers: []corev1.Container{
 						{
-							Name:           serviceName,
-							Image:          instance.Spec.ContainerImage,
-							Env:            env.MergeEnvs([]corev1.EnvVar{}, envVars),
-							VolumeMounts:   volumeMounts,
-							Resources:      instance.Spec.Resources,
-							ReadinessProbe: readinessProbe,
-							LivenessProbe:  livenessProbe,
+							Name: serviceName,
+							Command: []string{
+								"/usr/sbin/rsyslogd",
+								"-n",
+							},
+							Image:           instance.Spec.ContainerImage,
+							SecurityContext: pod.RestrictiveSecurityContext(serviceuser.OctaviaUID),
+							Env:             env.MergeEnvs([]corev1.EnvVar{}, envVars),
+							VolumeMounts:    volumeMounts,
+							Resources:       instance.Spec.Resources,
+							ReadinessProbe:  readinessProbe,
+							LivenessProbe:   livenessProbe,
 						},
 					},
 					InitContainers: []corev1.Container{
